@@ -1,6 +1,9 @@
-use std::ptr::null;
-
-use iced::{keyboard::key::Code::Comma, wgpu::wgc::command, widget::text::base};
+pub mod utility {
+    pub enum PacketManagerResultCode {
+        Success,
+        Error(String, Vec<String>)
+    }
+}
 
 pub struct CommandOfPacketManager {
     basic_command: String,
@@ -9,47 +12,58 @@ pub struct CommandOfPacketManager {
     search_command: String,
     check_update_command: String,
     update_command: String,
-    add_repo_command: String,
-    remove_repo_command: String
 }
 
 impl CommandOfPacketManager {
     pub fn new_empty(base_command_name: String) -> CommandOfPacketManager {
-        let command_obj = CommandOfPacketManager{
+        let command_obj: CommandOfPacketManager = CommandOfPacketManager{
             basic_command: base_command_name,
             install_command: String::new(),
             remove_command: String::new(),
             search_command: String::new(),
             check_update_command: String::new(),
             update_command: String::new(),
-            add_repo_command: String::new(),
-            remove_repo_command: String::new()
         };
 
         return command_obj;
     }
+
+    pub fn new(base_command_name: String) -> CommandOfPacketManager {
+        return get_packet_manager_preset(base_command_name);
+    }
 }
 
-fn get_packet_manager_preset(base_command_name: String) {
+fn get_packet_manager_preset(base_command_name: String) -> CommandOfPacketManager {
     let mut command_obj: CommandOfPacketManager = CommandOfPacketManager::new_empty(base_command_name.clone());
-    for name in ["zypper", "dnf"] {
-        let name_obj: String = String::from(name);
 
-        if base_command_name == name_obj {
-            command_obj.install_command.insert_str(0, "install");
-            command_obj.remove_command.insert_str(0, "remove");
-            command_obj.search_command.insert_str(0, "search");
-            break;
+    match base_command_name.as_str() {
+        "zypper" => {
+            create_standard_commands(&mut command_obj);
+            command_obj.check_update_command = String::from("refresh");
+        },
+        "dnf" => {
+            create_standard_commands(&mut command_obj);
+            command_obj.update_command = String::from("upgrade");
+            command_obj.check_update_command = String::from("check");
+        },
+        "apt" => {
+            create_standard_commands(&mut command_obj);
         }
-    }
+
+        _ => {},
+    };
+
+    return command_obj;
 }
 
-mod utility {
-    pub enum PacketManagerResultCode {
-        Success,
-        Error(String, Vec<String>)
-    }
+fn create_standard_commands(command_obj: &mut CommandOfPacketManager) {
+    command_obj.install_command = String::from("install");
+    command_obj.remove_command = String::from("remove");
+    command_obj.search_command = String::from("search");
+    command_obj.update_command = String::from("update");
+    command_obj.check_update_command = String::from("upgrade");
 }
+
 
 mod packet_manager_trait {
     use super::utility::PacketManagerResultCode;
