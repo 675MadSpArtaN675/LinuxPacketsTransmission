@@ -93,6 +93,7 @@ fn create_standard_commands(command_obj: &mut PacketManagerCommand) {
 pub struct PacketManagerCommandExecutor
 {
     command_obj: PacketManagerCommand
+
 }
 
 impl PacketManager for PacketManagerCommandExecutor {
@@ -107,12 +108,23 @@ impl PacketManager for PacketManagerCommandExecutor {
         let _err_stream = install_process.stderr.take();
 
         let _status_code = install_process.wait();
-        if _status_code.is_ok() && _out_stream.is_some() && _err_stream.is_some() {
+        if _status_code.is_ok() {
+            if _out_stream.is_some() {
+
+            }
+
+            if _err_stream.is_some() {
+
+            }
+
+            return PacketManagerResultCode::Success;
         }
 
-    }
-    fn remove(self, packets: Vec<String>) -> PacketManagerResultCode {
+        return PacketManagerResultCode::Error(String::from("Error of process start"), vec![])
 
+    }
+
+    fn remove(&self, packets: &Vec<String>) -> PacketManagerResultCode {
     }
 
     fn update(self) -> PacketManagerResultCode {
