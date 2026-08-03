@@ -1,20 +1,21 @@
 pub mod utility {
     pub enum PacketManagerResultCode {
         Success,
-        Error(String, Vec<String>)
+        SuccessCollection(Vec<String>),
+        Error(String, i32, Vec<String>)
     }
 }
 
-mod packet_manager_trait {
+pub mod packet_manager_trait {
     use super::utility::PacketManagerResultCode;
 
     pub trait PacketManager {
-        fn install(&self, packets: &Vec<String>) -> PacketManagerResultCode;
-        fn remove(&self, packets: &Vec<String>) -> PacketManagerResultCode;
+        fn install(&mut self, packets: &Vec<String>) -> PacketManagerResultCode;
+        fn remove(&mut self, packets: &Vec<String>) -> PacketManagerResultCode;
 
-        fn update(&self) -> PacketManagerResultCode;
+        fn update(&mut self) -> PacketManagerResultCode;
         fn show_updates(&self) -> Vec<String>;
-        fn update_system(&self) -> PacketManagerResultCode;
+        fn update_system(&mut self) -> PacketManagerResultCode;
 
         fn repos(&self) -> Vec<String>;
         fn add_repo(&self, repo_name: &str, repo_url: &str);
@@ -26,7 +27,10 @@ mod packet_manager_trait {
 }
 
 use packet_manager_trait::PacketManager;
-use std::process::{Command, Child, Stdio};
+use std::process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
+use std::io::{BufReader, BufRead};
+use regex::{Regex, regex};
+use std::fmt::{Display, Error};
 
 use crate::packet_manager::utility::PacketManagerResultCode;
 
@@ -37,6 +41,7 @@ pub struct PacketManagerCommand {
     search_command: String,
     check_update_command: String,
     update_command: String,
+    system_update_command: String,
 }
 
 impl PacketManagerCommand {
@@ -48,6 +53,7 @@ impl PacketManagerCommand {
             search_command: String::new(),
             check_update_command: String::new(),
             update_command: String::new(),
+            system_update_command: String::new()
         };
 
         return command_obj;
@@ -65,6 +71,7 @@ fn get_packet_manager_preset(base_command_name: String) -> PacketManagerCommand 
         "zypper" => {
             create_standard_commands(&mut command_obj);
             command_obj.check_update_command = String::from("refresh");
+            command_obj.check_update_command = String::from("dist-upgrade");
         },
         "dnf" => {
             create_standard_commands(&mut command_obj);
@@ -90,72 +97,177 @@ fn create_standard_commands(command_obj: &mut PacketManagerCommand) {
 }
 
 
+
+#[derive(Clone, Copy)]
+pub enum Stage {
+    Install,
+    Remove,
+    Update,
+    Showing
+}
+
+impl Stage {
+    pub fn to_string(&self) -> &str {
+        let result: &str = match &self {
+            Stage::Install => "Install",
+            Stage::Update => "Update",
+            Stage::Remove => "Remove",
+            Stage::Showing => "Showing"
+        };
+
+        return result;
+    }
+
+    pub fn to_string_obj(&self) -> String {
+        return String::from(self.to_string());
+    }
+}
+
+impl Display for Stage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+pub struct ErroredPacket {
+    pub name: String,
+    pub stage: Stage
+}
+
+fn perform_command(basic_command: String, secondary_subcommand: String, stage: Stage, packets: &Vec<String>) -> PacketManagerResultCode
+{
+    let full_command: String = "sudo".to_string();
+
+    let mut _install_command: Command = Command::new(full_command.clone());
+
+    _install_command.arg(format!("{}", basic_command))
+                    .arg(secondary_subcommand.as_str())
+                    .arg("-y")
+                    .args(packets)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+
+    let install_process_result = _install_command.spawn();
+
+    if install_process_result.is_err() {
+        let error_message = format!("Error: {:?}", install_process_result.unwrap_err());
+        return PacketManagerResultCode::Error(error_message, -1, packets.clone())
+    }
+
+    let not_found_pattern: Regex = regex!(r#".*"(?<packet_name>[\w\d\s]+)".*((not found)|(не найден))"#).clone();
+    let mut install_process: Child = install_process_result.unwrap();
+
+    let _out_stream: Option<ChildStdout> = install_process.stdout.take();
+    let _err_stream: Option<ChildStderr> = install_process.stderr.take();
+
+
+    let _status_code: Result<ExitStatus, std::io::Error> = install_process.wait();
+    if _status_code.is_ok() {
+        let status_code = _status_code.unwrap();
+        let mut errored_packages: Vec<String> = Vec::new();
+
+        if _err_stream.is_some() {
+            let _buf_reader: BufReader<ChildStderr> = BufReader::new(_err_stream.unwrap());
+
+            for line in _buf_reader.lines() {
+                if line.is_ok() {
+                    let line_ref = line.as_ref().unwrap();
+                    for packet_error_line in not_found_pattern.captures_iter(line_ref.as_ref()) {
+                        let package_name_result = packet_error_line.name("packet_name");
+
+                        if package_name_result.is_some() {
+                            let package_name = String::from(package_name_result.unwrap().as_str());
+
+                            errored_packages.push(package_name);
+                        }
+                    }
+                }
+            }
+        }
+
+        if status_code.success() {
+            return PacketManagerResultCode::Success;
+        }
+        else {
+            return PacketManagerResultCode::Error(format!("Error in stage: {}", stage), status_code.code().unwrap(), errored_packages);
+        }
+    }
+
+    return PacketManagerResultCode::Error(format!("Error of process start. Stage: {}",  stage), -1, vec![])
+}
+
+fn catch_err(command_return: PacketManagerResultCode, stage: Stage, errored_packages: &mut Vec<ErroredPacket>) -> PacketManagerResultCode {
+    return match command_return {
+        PacketManagerResultCode::Error(message, status_code, packets) => {
+            for packet in packets.clone() {
+                errored_packages.push(ErroredPacket { name: packet, stage: stage });
+            }
+
+            return PacketManagerResultCode::Error(message, status_code, packets);
+        },
+        PacketManagerResultCode::SuccessCollection(val) => PacketManagerResultCode::SuccessCollection(val),
+
+        PacketManagerResultCode::Success => command_return
+    };
+}
+
 pub struct PacketManagerCommandExecutor
 {
-    command_obj: PacketManagerCommand
-
+    pub command_obj: PacketManagerCommand,
+    pub errored_packages: Vec<ErroredPacket>
 }
 
 impl PacketManager for PacketManagerCommandExecutor {
-    fn install(&self, packets: &Vec<String>) -> PacketManagerResultCode {
-        let full_command: String = format!("{} {}", self.command_obj.basic_command, self.command_obj.install_command);
+    fn install(&mut self, packets: &Vec<String>) -> PacketManagerResultCode {
+        println!("Installing packages...");
+        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.install_command.clone(), Stage::Install, packets);
 
-        let mut _install_command: Command = Command::new(full_command);
-        _install_command.args(packets);
-        let mut install_process: Child = _install_command.spawn().expect("Error of installer launch...");
+        return catch_err(command_return, Stage::Install, &mut self.errored_packages);
+    }
 
-        let _out_stream = install_process.stdout.take();
-        let _err_stream = install_process.stderr.take();
+    fn remove(&mut self, packets: &Vec<String>) -> PacketManagerResultCode {
+        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.remove_command.clone(), Stage::Remove, packets);
 
-        let _status_code = install_process.wait();
-        if _status_code.is_ok() {
-            if _out_stream.is_some() {
+        return catch_err(command_return, Stage::Remove, &mut self.errored_packages);
+    }
 
-            }
+    fn update(&mut self) -> PacketManagerResultCode {
+        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.update_command.clone(), Stage::Update, &Vec::new());
 
-            if _err_stream.is_some() {
+        return catch_err(command_return, Stage::Update, &mut self.errored_packages);
+    }
 
-            }
+    fn show_updates(&self) -> Vec<String> {
+        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.update_command.clone(), Stage::Update, &Vec::new());
 
-            return PacketManagerResultCode::Success;
-        }
+        let mut errored_packets: Vec<ErroredPacket> = vec![];
+        let status_code = catch_err(command_return, Stage::Showing, &mut errored_packets);
 
-        return PacketManagerResultCode::Error(String::from("Error of process start"), vec![])
+        return ;
+    }
+
+    fn update_system(&mut self) -> PacketManagerResultCode {
+        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.system_update_command.clone(), Stage::Remove, &vec![]);
+
+        return catch_err(command_return, Stage::Update, &mut self.errored_packages);
+    }
+
+    fn repos(&self) -> Vec<String> {
+        return vec![];
+    }
+
+    fn add_repo(&self, repo_name: &str, repo_url: &str) {
+    }
+
+    fn remove_repo(&self, repo_name: &str) {
 
     }
 
-    fn remove(&self, packets: &Vec<String>) -> PacketManagerResultCode {
+    fn search(&self, packets: Vec<String>) -> Vec<String> {
+        return vec![];
     }
 
-    fn update(self) -> PacketManagerResultCode {
-
-    }
-
-    fn show_updates(self) -> Vec<String> {
-
-    }
-
-    fn update_system(self) -> PacketManagerResultCode {
-
-    }
-
-    fn repos(self) -> Vec<String> {
-
-    }
-
-    fn add_repo(self, repo_name: &str, repo_url: &str) {
-
-    }
-
-    fn remove_repo(self, repo_name: &str) {
-
-    }
-
-    fn search(self, packets: Vec<String>) -> Vec<String> {
-
-    }
-
-    fn applications_list(self) -> Vec<String> {
-
+    fn applications_list(&self) -> Vec<String> {
+        return vec![];
     }
 }
