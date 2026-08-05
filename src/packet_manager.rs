@@ -11,6 +11,7 @@ pub mod utility {
         Install,
         Remove,
         Update,
+        Search,
         Showing
     }
 
@@ -20,6 +21,7 @@ pub mod utility {
                 Stage::Install => "Install",
                 Stage::Update => "Update",
                 Stage::Remove => "Remove",
+                Stage::Search => "Search",
                 Stage::Showing => "Showing"
             };
 
@@ -41,6 +43,31 @@ pub mod utility {
         pub name: String,
         pub stage: Stage
     }
+
+    pub enum InstallFlag {
+        Installed,
+        InstalledPlus,
+        NoInstalled
+    }
+
+    impl InstallFlag {
+        pub fn str_to_enum(line: &str) -> InstallFlag {
+            return match line {
+                "i" => InstallFlag::Installed,
+                "i+" => InstallFlag::InstalledPlus,
+                "n" => InstallFlag::NoInstalled,
+
+                _ => InstallFlag::NoInstalled
+            };
+        }
+    }
+
+    pub struct FoundPackage {
+        pub name: String,
+        pub description: String,
+        pub install_flag: InstallFlag,
+        pub type_of_packet: String
+    }
 }
 
 pub mod command_basic_structure {
@@ -49,6 +76,7 @@ pub mod command_basic_structure {
         pub install_command: String,
         pub remove_command: String,
         pub search_command: String,
+        pub list_command: String,
         pub check_update_command: String,
         pub update_command: String,
         pub system_update_command: String,
@@ -61,6 +89,7 @@ pub mod command_basic_structure {
                 install_command: String::new(),
                 remove_command: String::new(),
                 search_command: String::new(),
+                list_command: String::new(),
                 check_update_command: String::new(),
                 update_command: String::new(),
                 system_update_command: String::new()
@@ -80,16 +109,22 @@ pub mod command_basic_structure {
         match base_command_name.as_str() {
             "zypper" => {
                 create_standard_commands(&mut command_obj);
+                command_obj.install_command += " -y";
+                command_obj.remove_command += " -y";
+                command_obj.list_command = "search --installed-only".to_string();
+                command_obj.update_command += " -y";
                 command_obj.check_update_command = String::from("refresh");
-                command_obj.check_update_command = String::from("dist-upgrade");
+                command_obj.system_update_command = String::from("dist-upgrade -y");
             },
             "dnf" => {
                 create_standard_commands(&mut command_obj);
+                command_obj.list_command = "list --installed".to_string();
                 command_obj.update_command = String::from("upgrade");
                 command_obj.check_update_command = String::from("check");
             },
             "apt" => {
                 create_standard_commands(&mut command_obj);
+                command_obj.list_command = "list installed".to_string();
             }
 
             _ => {},
@@ -108,6 +143,9 @@ pub mod command_basic_structure {
 }
 
 mod command_performers {
+    use std::rc::Rc;
+    use std::cell::RefCell;
+
     use super::utility::{Stage, PacketManagerResultCode, ErroredPacket};
 
     use std::io::{BufReader, BufRead, Read};
@@ -117,19 +155,29 @@ mod command_performers {
                     secondary_subcommand: String,
                     stage: Stage,
                     packets: &Vec<String>,
+                    is_admin: bool,
                     error_parser: Option<&mut Box<dyn FnMut(&mut String)>>,
                     output_parser: Option<&mut Box<dyn FnMut(&mut String)>>
     ) -> PacketManagerResultCode
     {
-        let full_command: String = "sudo".to_string();
+        let mut command_parts: Vec<String> = Vec::new();
 
-        let mut _install_command: Command = Command::new(full_command.clone());
+        if is_admin {
+            command_parts.push("sudo".to_string());
+        }
 
-        _install_command.arg(format!("{}", basic_command))
-                        .arg(secondary_subcommand.as_str())
-                        .args(packets)
-                        .stdout(Stdio::piped())
+        command_parts.extend(basic_command.split(" ").filter(|line| !line.is_empty()).map(|line| line.to_string()));
+        command_parts.extend(secondary_subcommand.split(" ").filter(|line| !line.is_empty()).map(|line| line.to_string()));
+
+        let mut _install_command: Command = Command::new(command_parts.remove(0));
+        _install_command.stdout(Stdio::piped())
                         .stderr(Stdio::piped());
+
+        for arg in command_parts {
+            _install_command.arg(arg);
+        }
+
+        _install_command.args(packets);
 
         let install_process_result = _install_command.spawn();
 
@@ -175,10 +223,11 @@ mod command_performers {
         basic_command: String,
         secondary_subcommand: String,
         stage: Stage,
-        packets: &Vec<String>
+        packets: &Vec<String>,
+        is_admin: bool
     ) -> PacketManagerResultCode
     {
-        perform_command(basic_command, secondary_subcommand, stage, packets, None, None)
+        perform_command(basic_command, secondary_subcommand, stage, packets, is_admin, None, None)
     }
 
     fn package_lines_parse<T>(_err_stream: T, parser: Option<&mut Box<dyn FnMut(&mut String)>>) -> Vec<String>
@@ -201,11 +250,11 @@ mod command_performers {
         return _packages_result;
     }
 
-    pub fn catch_err(command_return: PacketManagerResultCode, stage: Stage, errored_packages: &mut Vec<ErroredPacket>) -> PacketManagerResultCode {
+    pub fn catch_err(command_return: PacketManagerResultCode, stage: Stage, errored_packages: &Rc<RefCell<Vec<ErroredPacket>>>) -> PacketManagerResultCode {
         return match command_return {
             PacketManagerResultCode::Error(message, status_code, packets) => {
                 for packet in packets.clone() {
-                    errored_packages.push(ErroredPacket { name: packet, stage: stage });
+                    errored_packages.borrow_mut().push(ErroredPacket { name: packet, stage: stage });
                 }
 
                 return PacketManagerResultCode::Error(message, status_code, packets);
@@ -215,7 +264,9 @@ mod command_performers {
     }
 }
 pub mod packet_manager_trait {
-    use super::utility::{PacketManagerResultCode, Stage};
+    use crate::packet_manager::utility::FoundPackage;
+
+use super::utility::{PacketManagerResultCode, Stage};
 
     pub type ParserOutput = Box<dyn FnMut(&mut String) + 'static>;
 
@@ -225,40 +276,139 @@ pub mod packet_manager_trait {
         fn install(&mut self, packets: &Vec<String>) -> PacketManagerResultCode;
         fn remove(&mut self, packets: &Vec<String>) -> PacketManagerResultCode;
 
+        fn search(&mut self, packets: Vec<String>) -> Vec<FoundPackage>;
+        fn packets_list(&mut self) -> Vec<FoundPackage>;
+
         fn update(&mut self) -> PacketManagerResultCode;
-        fn show_updates(&self) -> Vec<String>;
+        fn show_updates(&mut self) -> Vec<String>;
         fn update_system(&mut self) -> PacketManagerResultCode;
 
         fn repos(&self) -> Vec<String>;
         fn add_repo(&self, repo_name: &str, repo_url: &str);
         fn remove_repo(&self, repo_name: &str);
-
-        fn search(&self, packets: Vec<String>) -> Vec<String>;
-        fn applications_list(&self) -> Vec<String>;
     }
 }
 
 pub mod parsers {
-    // let not_found_pattern: Regex = regex!(r#".*"(?<packet_name>[\w\d\s]+)".*((not found)|(не найден))"#).clone();
+    pub(self) mod zypper_module {
+        use regex::{Regex, regex};
+        use itertools::Itertools;
+
+        pub(super) fn zypper_parse_install_errors(line: &mut String, packets_list: &mut Vec<String>) {
+            let not_found_pattern: Regex = regex!(r#".*"(?<packet_name>[\w\d\s]+)".*((not found)|(не найден))"#).clone();
+
+            if let Some(captures) = not_found_pattern.captures(line) {
+                if let Some(named_capt) = captures.name("packet_name") {
+                    let packet_name = named_capt.as_str().to_string();
+
+                    packets_list.push(packet_name);
+                }
+            }
+        }
+        pub(super) fn print_line(line: &mut String) {
+            println!("Line: {}", line.clone());
+        }
+
+        pub(super) fn parse_table(line: &mut String, partitioner: &str, packets_found: &mut Vec<String>) {
+            let pattern = Regex::new(r#"[\s|]+(S|Name|Summary|Type)[\s|]+"#).unwrap();
+            let start_pattern: Regex = Regex::new(r#"^i\+?"#).unwrap();
+
+            if line.contains(partitioner) && !pattern.is_match(line) {
+                let mut line_preready = line.clone().split("|").map(|item| {item.trim()}).join("|");
+
+                if !start_pattern.is_match(&line_preready) {
+                    line_preready = "n".to_string() + line_preready.as_str();
+                }
+
+                packets_found.push(line_preready);
+            }
+        }
+    }
+
+    use std::{ops::DerefMut, rc::Rc};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    use super::utility::Stage;
+    use super::packet_manager_trait::ParserOutput;
+    use super::utility::ErroredPacket;
+
+    use zypper_module::{zypper_parse_install_errors, print_line, parse_table};
+
+    pub fn fill_error_performers(packet_manager_name: &String, base_map_of_functions: &mut HashMap<Stage, ParserOutput>, errored_packets_collection: &Rc<RefCell<Vec<ErroredPacket>>>) {
+        let name = packet_manager_name.as_str();
+        match name {
+            "zypper" => {
+                let errored_packages = errored_packets_collection.clone();
+                base_map_of_functions.insert(Stage::Install, Box::new(move |line: &mut String| {
+                    let mut _pack_list: Vec<String> = Vec::new();
+                    zypper_parse_install_errors(line, &mut _pack_list);
+
+                    errored_packages.borrow_mut().extend(_pack_list.iter().map(|item| ErroredPacket { name: item.clone(), stage: Stage::Install}));
+                }));
+            },
+
+            _ => {}
+        }
+    }
+
+    pub fn fill_performers(packet_manager_name: &String, base_map_of_functions: &mut HashMap<Stage, ParserOutput>, valid_lines_collection: &Rc<RefCell<Vec<String>>>) {
+        let name = packet_manager_name.as_str();
+        match name {
+            "zypper" => {
+                let ptr_collection = valid_lines_collection.clone();
+                base_map_of_functions.insert(Stage::Install, Box::new(print_line));
+                base_map_of_functions.insert(Stage::Update, Box::new(print_line));
+                base_map_of_functions.insert(Stage::Remove, Box::new(print_line));
+                base_map_of_functions.insert(Stage::Showing, Box::new(print_line));
+                base_map_of_functions.insert(Stage::Search,
+                    Box::new(
+                        move |line: &mut String| {
+                            parse_table(line, "|", ptr_collection.borrow_mut().deref_mut());
+                    }
+                ));
+            },
+
+            _ => {}
+        }
+    }
 }
 
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
-use utility::{PacketManagerResultCode, Stage, ErroredPacket};
+use utility::{PacketManagerResultCode, Stage, ErroredPacket, FoundPackage, InstallFlag};
 use packet_manager_trait::{PacketManager, ParserOutput};
 
+use parsers::{fill_error_performers, fill_performers};
 use command_performers::{perform_command, catch_err};
 use command_basic_structure::PacketManagerCommand;
 
+fn create_packages(valid_lines: &Rc<RefCell<Vec<String>>>) -> Vec<FoundPackage> {
+    let mut packages: Vec<FoundPackage> = vec![];
+    let mut ref_to_lines = valid_lines.borrow_mut();
 
+    for parsed_line in ref_to_lines.iter().map(|line| line.split("|").map(|s| s.to_string())) {
+        let line: Vec<String> = parsed_line.collect();
 
+        packages.push(FoundPackage {name: line[1].clone(), description: line[2].clone(), install_flag: InstallFlag::str_to_enum(line[0].as_str()), type_of_packet: line[3].clone()});
+    }
+
+    ref_to_lines.clear();
+
+    return packages;
+}
 
 pub struct PacketManagerCommandExecutor
 {
     command_obj: PacketManagerCommand,
-    errored_packages: Vec<ErroredPacket>,
+
+    errored_packages: Rc<RefCell<Vec<ErroredPacket>>>,
+    valid_lines: Rc<RefCell<Vec<String>>>,
+
     stage_performers: HashMap<Stage, ParserOutput>,
-    stage_errors_performers: HashMap<Stage, Box<dyn FnMut(&mut String) + 'static>>
+    stage_errors_performers: HashMap<Stage, ParserOutput>
 }
 
 impl PacketManagerCommandExecutor {
@@ -266,10 +416,26 @@ impl PacketManagerCommandExecutor {
     {
         return PacketManagerCommandExecutor {
             command_obj: PacketManagerCommand::new_empty("zypper".to_string()),
-            errored_packages: vec![],
+            errored_packages: Rc::new(RefCell::new(vec![])),
+            valid_lines: Rc::new(RefCell::new(vec![])),
             stage_performers: HashMap::new(),
             stage_errors_performers: HashMap::new()
         };
+    }
+
+    pub fn new(base_name: String) -> PacketManagerCommandExecutor {
+        let mut pm_executer: PacketManagerCommandExecutor = PacketManagerCommandExecutor {
+            command_obj: PacketManagerCommand::new(base_name.clone()),
+            errored_packages: Rc::new(RefCell::new(vec![])),
+            valid_lines: Rc::new(RefCell::new(vec![])),
+            stage_performers: HashMap::new(),
+            stage_errors_performers: HashMap::new()
+        };
+
+        fill_error_performers(&base_name.clone(), &mut pm_executer.stage_errors_performers, &pm_executer.errored_packages);
+        fill_performers(&base_name.clone(), &mut pm_executer.stage_performers, &pm_executer.valid_lines);
+
+        return pm_executer;
     }
 }
 
@@ -290,38 +456,75 @@ impl PacketManager for PacketManagerCommandExecutor {
 
     fn install(&mut self, packets: &Vec<String>) -> PacketManagerResultCode {
         let (basic, install) = (self.command_obj.basic_command.clone(), self.command_obj.install_command.clone());
-        let (err_parser, out_parser) = self.get_performers(Stage::Install);
+        let (out_parser, err_parser) = self.get_performers(Stage::Install);
 
-        let command_return: PacketManagerResultCode = perform_command(basic, install, Stage::Install, packets, err_parser, out_parser);
+        let command_return: PacketManagerResultCode = perform_command(basic, install, Stage::Install, packets, true, err_parser, out_parser);
 
         return catch_err(command_return, Stage::Install, &mut self.errored_packages);
     }
 
     fn remove(&mut self, packets: &Vec<String>) -> PacketManagerResultCode {
-        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.remove_command.clone(), Stage::Remove, packets, None, None);
+        let (basic, sec) = (self.command_obj.basic_command.clone(), self.command_obj.remove_command.clone());
+        let (out_parser, err_parser) = self.get_performers(Stage::Remove);
+
+        let command_return: PacketManagerResultCode = perform_command(basic, sec, Stage::Remove, packets, true, err_parser, out_parser);
 
         return catch_err(command_return, Stage::Remove, &mut self.errored_packages);
     }
 
     fn update(&mut self) -> PacketManagerResultCode {
-        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.update_command.clone(), Stage::Update, &Vec::new(), None, None);
+        let (basic, sec) = (self.command_obj.basic_command.clone(), self.command_obj.update_command.clone());
+        let (out_parser, err_parser) = self.get_performers(Stage::Update);
+
+        let command_return: PacketManagerResultCode = perform_command(basic, sec, Stage::Update, &Vec::new(), true, err_parser, out_parser);
 
         return catch_err(command_return, Stage::Update, &mut self.errored_packages);
     }
 
-    fn show_updates(&self) -> Vec<String> {
-        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.update_command.clone(), Stage::Update, &Vec::new(), None , None);
+    fn show_updates(&mut self) -> Vec<String> {
+        let (basic, sec) = (self.command_obj.basic_command.clone(), self.command_obj.check_update_command.clone());
+        let (out_parser, err_parser) = self.get_performers(Stage::Showing);
 
-        let mut errored_packets: Vec<ErroredPacket> = vec![];
-        let status_code = catch_err(command_return, Stage::Showing, &mut errored_packets);
+        let command_return: PacketManagerResultCode = perform_command(basic, sec, Stage::Showing, &Vec::new(), true, err_parser, out_parser);
 
-        return vec![];
+        let errored_packets: Rc<RefCell<Vec<ErroredPacket>>> = Rc::new(RefCell::new(vec![]));
+        let status_code = catch_err(command_return, Stage::Showing, &errored_packets);
+
+        return match status_code {
+            PacketManagerResultCode::Success(addons) => addons.unwrap_or(vec![]),
+            _ => vec![]
+        };
     }
 
     fn update_system(&mut self) -> PacketManagerResultCode {
-        let command_return: PacketManagerResultCode = perform_command(self.command_obj.basic_command.clone(), self.command_obj.system_update_command.clone(), Stage::Remove, &vec![], None, None);
+        let (basic, sec) = (self.command_obj.basic_command.clone(), self.command_obj.system_update_command.clone());
+        let (out_parser, err_parser) = self.get_performers(Stage::Update);
+
+        let command_return: PacketManagerResultCode = perform_command(basic, sec, Stage::Update, &vec![], true, err_parser, out_parser);
 
         return catch_err(command_return, Stage::Update, &mut self.errored_packages);
+    }
+
+    fn search(&mut self, packets: Vec<String>) -> Vec<FoundPackage> {
+        let (basic, sec) = (self.command_obj.basic_command.clone(), self.command_obj.search_command.clone());
+
+        for packet in packets {
+            let (out_parser, err_parser) = self.get_performers(Stage::Search);
+
+            let command_return: PacketManagerResultCode = perform_command(basic.clone(), sec.clone(), Stage::Search, &vec![packet], true, err_parser, out_parser);
+        }
+
+
+        return create_packages(&self.valid_lines);
+    }
+
+    fn packets_list(&mut self) -> Vec<FoundPackage> {
+        let (basic, sec) = (self.command_obj.basic_command.clone(), self.command_obj.list_command.clone());
+        let (out_parser, err_parser) = self.get_performers(Stage::Search);
+
+        let command_return: PacketManagerResultCode = perform_command(basic, sec, Stage::Search, &vec![], true, err_parser, out_parser);
+
+        return create_packages(&self.valid_lines);
     }
 
     fn repos(&self) -> Vec<String> {
@@ -335,11 +538,4 @@ impl PacketManager for PacketManagerCommandExecutor {
 
     }
 
-    fn search(&self, packets: Vec<String>) -> Vec<String> {
-        return vec![];
-    }
-
-    fn applications_list(&self) -> Vec<String> {
-        return vec![];
-    }
 }
