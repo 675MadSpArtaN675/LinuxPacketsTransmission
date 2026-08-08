@@ -7,4 +7,5 @@ edition = "2024"
 iced = "0.14.0"
 itertools = "0.15.0"
 log = "0.4.33"
+package_manager_automatic = { version = "0.1.0", path = "libs/package_manager_automatic" }
 regex = "1.13.1"

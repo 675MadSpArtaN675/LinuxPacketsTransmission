@@ -1,9 +1,5 @@
-mod packet_manager;
-
-use packet_manager::packet_manager_trait::*;
-use packet_manager::command_basic_structure::PacketManagerCommand;
-
-use packet_manager::PacketManagerCommandExecutor;
+use package_manager_automatic::command_struct::packet_manager_trait::PacketManager;
+use package_manager_automatic::PacketManagerCommandExecutor;
 
 fn main() {
     let mut executor = PacketManagerCommandExecutor::new("zypper".to_string());
@@ -17,8 +13,17 @@ fn main() {
     // executor.remove(&vector_collection_1);
     // executor.install(&vector_collection);
 
-    executor.search(vector_collection_2);
-    executor.packets_list();
+    for package in executor.search(vector_collection_1) {
+        println!("Search package: {:?}", package);
+    }
+
+    for package in executor.packets_list() {
+        println!("Package: {:?}", package);
+    }
+
+    for repo in executor.repos() {
+        println!("Repo: {:?}", repo);
+    }
 
     // executor.show_updates();
     // executor.update();
