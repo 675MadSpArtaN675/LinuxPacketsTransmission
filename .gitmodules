@@ -1,3 +1,3 @@
 [submodule "PackageManagerAutomatization"]
-	path = PackageManagerAutomatization
+	path = libs/package_manager_automatic
 	url = https://github.com/675MadSpArtaN675/PackageManagerAutomatization.git
