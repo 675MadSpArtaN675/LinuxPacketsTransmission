@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clap = { version = "4.6.6", features = ["cargo", "derive"] }
+fern = "0.7.1"
 iced = "0.14.0"
 itertools = "0.15.0"
-log = "0.4.33"
+json = "0.12.4"
+log = { version = "0.4.33", features = ["kv"] }
 package_manager_automatic = { version = "0.1.0", path = "libs/package_manager_automatic" }
 regex = "1.13.1"
-tokio = "1.53.1"
+tokio = { version = "1.53.1", features = ["io-util", "net", "rt"] }
