@@ -1,4 +1,4 @@
-mod base_logic {
+mod utility_logic {
     use package_manager_automatic::command_struct::packet_manager_trait::{JsonTransformable, PackageNamed};
 
     use json::JsonValue;
@@ -169,8 +169,8 @@ use package_manager_automatic::utility::{FoundPackage, Repository};
 use package_manager_automatic::PacketManagerCommandExecutor;
 use package_manager_automatic::utility::PacketManagerResultCode;
 use package_manager_automatic::command_struct::packet_manager_trait::PacketManager;
+use utility_logic::*;
 
-use base_logic::*;
 
 pub struct AppBaseLogic {
     executor: PacketManagerCommandExecutor,
@@ -220,7 +220,12 @@ impl AppBaseLogic {
         return None;
     }
 
-    pub fn new(basic_packet_manager: String) -> AppBaseLogic {
+    pub fn new(basic_packet_manager: String, path_to_save: Option<String>) -> AppBaseLogic {
+        info!("Creating base logic for packet manager '{}' ", basic_packet_manager);
+        if let Some(path) = path_to_save {
+            info!("Save path of lists '{}'", path);
+        }
+
         return AppBaseLogic { executor: PacketManagerCommandExecutor::new(basic_packet_manager), filter_patterns: vec![], filter_repo_patterns: vec![], chunk_size: 64usize};
     }
 

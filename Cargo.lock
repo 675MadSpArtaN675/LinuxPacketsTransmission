@@ -3,21 +3,6 @@
 version = 4
 
 [[package]]
-name = "Rust"
-version = "0.1.0"
-dependencies = [
- "clap",
- "fern",
- "iced",
- "itertools",
- "json",
- "log",
- "package_manager_automatic",
- "regex",
- "tokio",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2280,6 +2265,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36820e9051aca1014ddc75770aab4d68bc1e9e632f0f5627c4086bc216fb583b"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "pac_transmission"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fern",
+ "iced",
+ "itertools",
+ "json",
+ "log",
+ "package_manager_automatic",
+ "regex",
+ "tokio",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "Rust"
+name = "pac_transmission"
 version = "0.1.0"
 edition = "2024"
 
