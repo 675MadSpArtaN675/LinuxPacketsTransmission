@@ -724,6 +724,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "cwd"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4632e8e6b4b85e695c7bd851a0781a0af3b9224cd8079d8f7286dc755763fee"
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2272,6 +2278,7 @@ name = "pac_transmission"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cwd",
  "fern",
  "iced",
  "itertools",

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.6", features = ["cargo", "derive"] }
+cwd = "1.1.6"
 fern = "0.7.1"
 iced = "0.14.0"
 itertools = "0.15.0"

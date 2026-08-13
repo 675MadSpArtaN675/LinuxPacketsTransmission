@@ -1,4 +1,5 @@
 mod command_line_params;
+mod file_saver;
 mod base_logic;
 mod logic;
 
@@ -13,7 +14,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
-                "[{}-'{}'] - {}",
+                "[{}-'{}']: {}",
                 record.level(),
                 record.target(),
                 message
@@ -41,8 +42,8 @@ fn main() {
             recieve_packages_and_repos(
                 &mut standard_logic,
                 args.port,
-                args.is_install_repositories,
-                args.is_install_packages
+                !args.is_no_install_repositories,
+                !args.is_no_install_packages
             );
         },
         RecieveCommand::Send(args) => {

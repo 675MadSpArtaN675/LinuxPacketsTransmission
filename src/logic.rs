@@ -3,12 +3,13 @@ use package_manager_automatic::utility::InstallFlag;
 
 use regex::Regex;
 
-use log::{debug, info};
+use log::{debug, info, warn};
 
 pub fn recieve_packages_and_repos(standard_logic: &mut AppBaseLogic, port: u32, is_install_repos: bool, is_install_packages: bool) {
-    let repository_list = standard_logic.recieve_repository_list(port);
-    let packages_list = standard_logic.recieve_packages_list(port);
+    let repository_list: Option<Vec<package_manager_automatic::utility::Repository>> = standard_logic.recieve_repository_list(port);
+    let packages_list: Option<Vec<package_manager_automatic::utility::FoundPackage>> = standard_logic.recieve_packages_list(port);
 
+    info!("Recieving on port {}. Is install repos: {}. Is install packages: {}", port, is_install_repos, is_install_packages);
     if let Some(repo_list) = repository_list{
         for repo in repo_list {
             if repo.enabled_status {
@@ -27,7 +28,7 @@ pub fn recieve_packages_and_repos(standard_logic: &mut AppBaseLogic, port: u32, 
             .map(|s| s.name.clone())
             .collect();
 
-        debug!("Getted packages: {}", if found_packages.len() > 0 { "None" } else { "\n" });
+        debug!("Getted packages: {}", if found_packages.len() > 0 { "None" } else { "" });
         for package in found_packages.iter() {
             debug!("\t- {}", package);
         }
@@ -57,10 +58,16 @@ pub fn send_packages_and_repos(standard_logic: &mut AppBaseLogic, ip_to_send: &V
     }
 
     debug!("Sending info about packages to ips: {}", if ips_to_send.len() > 0 { "" } else {"None"});
-    for ip in ips_to_send.iter() {
-        debug!("\t{}", ip);
-    }
 
-    standard_logic.send_repository_list(ip_to_send.clone(), port);
-    standard_logic.send_packages_list(ip_to_send.clone(), port);
+    if !ips_to_send.is_empty() {
+        for ip in ips_to_send.iter() {
+            debug!("\t{}", ip);
+        }
+
+        standard_logic.send_repository_list(ip_to_send.clone(), port);
+        standard_logic.send_packages_list(ip_to_send.clone(), port);
+    }
+    else {
+        warn!("No ip addreses to send is added...");
+    }
 }

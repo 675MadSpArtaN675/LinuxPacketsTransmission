@@ -164,19 +164,23 @@ mod utility_logic {
     }
 }
 
+use cwd::cwd;
 
 use package_manager_automatic::utility::{FoundPackage, Repository};
 use package_manager_automatic::PacketManagerCommandExecutor;
 use package_manager_automatic::utility::PacketManagerResultCode;
 use package_manager_automatic::command_struct::packet_manager_trait::PacketManager;
-use utility_logic::*;
 
+use utility_logic::*;
+use crate::file_saver::{Saver, FileSaver};
 
 pub struct AppBaseLogic {
     executor: PacketManagerCommandExecutor,
 
     filter_patterns: Vec<String>,
     filter_repo_patterns: Vec<String>,
+
+    saver: Option<Box<dyn Saver>>,
 
     chunk_size: usize
 }
@@ -189,6 +193,10 @@ impl AppBaseLogic {
         if let Some(runtime) = runtime_opt {
             debug!("Getting pacakge list in json");
             let json_list: String = create_list();
+
+            if self.saver.is_some() {
+                self.saver.as_ref().unwrap().save(&json_list);
+            }
 
             runtime.block_on(async {
                 send_list_to_any_clients(&ip_list, port, json_list, self.chunk_size).await;
@@ -203,7 +211,7 @@ impl AppBaseLogic {
         let runtime_result = create_runtime();
 
         if let Some(runtime) = runtime_result {
-            let mut result_string = String::new();
+            let mut result_string: String = String::new();
 
             runtime.block_on(async {
                 let readed_string_opt = recieve_list(port).await;
@@ -212,6 +220,10 @@ impl AppBaseLogic {
                     result_string.push_str(readed_string.as_str());
                 }
             });
+
+            if self.saver.is_some() {
+                self.saver.as_ref().unwrap().save(&result_string);
+            }
 
             debug!("String recieved! Her len: {}", result_string.len());
             return parser(result_string);
@@ -222,11 +234,14 @@ impl AppBaseLogic {
 
     pub fn new(basic_packet_manager: String, path_to_save: Option<String>) -> AppBaseLogic {
         info!("Creating base logic for packet manager '{}' ", basic_packet_manager);
+        let mut saver: Option<Box<dyn Saver>> = None;
         if let Some(path) = path_to_save {
             info!("Save path of lists '{}'", path);
+
+            saver = Some(Box::new(FileSaver::new(path)));
         }
 
-        return AppBaseLogic { executor: PacketManagerCommandExecutor::new(basic_packet_manager), filter_patterns: vec![], filter_repo_patterns: vec![], chunk_size: 64usize};
+        return AppBaseLogic { executor: PacketManagerCommandExecutor::new(basic_packet_manager), filter_patterns: vec![], filter_repo_patterns: vec![], saver: saver, chunk_size: 64usize};
     }
 
     pub fn get_repo_filters_count(&self) -> usize
@@ -283,7 +298,7 @@ impl AppBaseLogic {
     }
 
     pub fn send_repository_list(&mut self, ip_list: Vec<String>, port: u32) {
-        let patterns: Vec<String> = self.filter_patterns.clone();
+        let patterns: Vec<String> = self.filter_repo_patterns.clone();
         let repositories: Vec<Repository> = self.executor.repos().clone();
 
         let create_list_func: Box<dyn FnMut() -> String> = Box::new(move || create_json_of_packet_list(patterns.clone(), repositories.clone()));

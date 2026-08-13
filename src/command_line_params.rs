@@ -36,11 +36,11 @@ pub struct RecieveArgs {
     #[arg(short, long, default_value_t = "zypper".to_string())]
     pub name: String,
 
-    #[arg(short = 'r', long, default_value_t = true)]
-    pub is_install_repositories: bool,
+    #[arg(short = 'r', long, default_value_t = false)]
+    pub is_no_install_repositories: bool,
 
-    #[arg(short = 'p', long, default_value_t = true)]
-    pub is_install_packages: bool,
+    #[arg(short = 'p', long, default_value_t = false)]
+    pub is_no_install_packages: bool,
 
     #[arg(short = 's', long)]
     pub path_to_save: Option<String>,
