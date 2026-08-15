@@ -1,4 +1,6 @@
 mod command_line_params;
+mod package_b_a_w_list;
+mod packages_filter;
 mod file_saver;
 mod base_logic;
 mod logic;
@@ -33,7 +35,6 @@ fn main() {
     }
 
     let auto_args = AutomatonArgs::parse();
-
     info!("Start parsing...");
     match auto_args.subcommands {
         RecieveCommand::Recieve(args) => {

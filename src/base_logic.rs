@@ -10,6 +10,8 @@ mod utility_logic {
     pub(super) use json::array;
     pub(super) use log::{debug, info, error};
 
+use crate::packages_filter::NameCheckuper;
+
     pub(super) fn create_runtime() -> Option<Runtime> {
         let mut runtime_builder = Builder::new_current_thread();
         runtime_builder.enable_all();
@@ -27,28 +29,14 @@ mod utility_logic {
         return None;
     }
 
-    pub(super) fn create_json_of_packet_list(filter_patterns: Vec<String>, packets_list: Vec<impl JsonTransformable + PackageNamed + Clone>) -> String {
-        info!("Input filters: {}", filter_patterns.clone().iter().map(|s| format!("'{}' ", s)).collect::<Vec<String>>().join(" "));
+    pub(super) fn create_json_of_packet_list(packets_list: Vec<impl JsonTransformable + PackageNamed + Clone>) -> String {
         let installed_packages_list = packets_list;
 
         let mut _array = array![];
 
         for package in installed_packages_list.iter() {
-            if filter_patterns.len() > 0 {
-                for pattern_line in filter_patterns.iter() {
-                    let pattern = Regex::new(&pattern_line).unwrap();
-
-                    if pattern.is_match(&package.get_name().as_str()) {
-                        if let Err(added_value) = _array.push(package.clone().to_json()) {
-                            error!("Error of serialization: {}", added_value);
-                        }
-                    }
-                }
-            }
-            else {
-                if let Err(added_value) = _array.push(package.clone().to_json()) {
-                    error!("Error of serialization: {}", added_value);
-                }
+            if let Err(added_value) = _array.push(package.clone().to_json()) {
+                error!("Error of serialization: {}", added_value);
             }
         }
 
@@ -164,21 +152,26 @@ mod utility_logic {
     }
 }
 
-use cwd::cwd;
+use std::rc::Rc;
+use std::ops::Deref;
+use std::cell::{RefCell, Ref, RefMut};
 
-use package_manager_automatic::utility::{FoundPackage, Repository};
+use package_manager_automatic::utility::{FoundPackage, Repository, InstallFlag};
 use package_manager_automatic::PacketManagerCommandExecutor;
 use package_manager_automatic::utility::PacketManagerResultCode;
-use package_manager_automatic::command_struct::packet_manager_trait::PacketManager;
+use package_manager_automatic::command_struct::packet_manager_trait::{PackageNamed, PacketManager};
 
 use utility_logic::*;
+use crate::packages_filter::{filter_patterns, NameCheckuper};
 use crate::file_saver::{Saver, FileSaver};
 
 pub struct AppBaseLogic {
     executor: PacketManagerCommandExecutor,
 
-    filter_patterns: Vec<String>,
     filter_repo_patterns: Vec<String>,
+
+    pub packages_checker: Rc<RefCell<NameCheckuper>>,
+    pub repository_checker: Rc<RefCell<NameCheckuper>>,
 
     saver: Option<Box<dyn Saver>>,
 
@@ -240,17 +233,17 @@ impl AppBaseLogic {
 
             saver = Some(Box::new(FileSaver::new(path)));
         }
-
-        return AppBaseLogic { executor: PacketManagerCommandExecutor::new(basic_packet_manager), filter_patterns: vec![], filter_repo_patterns: vec![], saver: saver, chunk_size: 64usize};
-    }
-
-    pub fn get_repo_filters_count(&self) -> usize
-    {
-        return self.filter_repo_patterns.len();
-    }
-
-    pub fn get_package_filters_count(&self) -> usize {
-        return self.filter_patterns.len();
+        return AppBaseLogic {
+            executor: PacketManagerCommandExecutor::new(basic_packet_manager),
+            filter_repo_patterns: vec![],
+            packages_checker: Rc::new(RefCell::new(NameCheckuper::new(
+                vec![],
+                filter_patterns!().iter().map(|s| s.to_string()).collect()
+            ))),
+            repository_checker: Rc::new(RefCell::new(NameCheckuper::new_empty())),
+            saver: saver,
+            chunk_size: 64usize
+        };
     }
 
     pub fn set_other_packet_manager(&mut self, packet_manager_name: String) {
@@ -268,40 +261,16 @@ impl AppBaseLogic {
     pub fn get_chunk_size(&self) -> usize {
         return self.chunk_size;
     }
-
-    pub fn add_filter(&mut self, pattern: String) {
-        if !pattern.is_empty() && !self.filter_patterns.contains(&pattern) {
-            self.filter_patterns.push(pattern);
-        }
-    }
-
     pub fn add_repo_filter(&mut self, pattern: String) {
         if !pattern.is_empty() && !self.filter_repo_patterns.contains(&pattern) {
             self.filter_repo_patterns.push(pattern);
         }
     }
 
-    pub fn get_filter(&self, index: usize) -> Option<&String> {
-        return self.filter_patterns.get(index);
-    }
-
-    pub fn get_repo_filter(&self, index: usize) -> Option<&String> {
-        return self.filter_repo_patterns.get(index);
-    }
-
-    pub fn get_filter_mut(&mut self, index: usize) -> Option<&mut String> {
-        return self.filter_patterns.get_mut(index);
-    }
-
-    pub fn get_repo_filter_mut(&mut self, index: usize) -> Option<&mut String> {
-        return self.filter_repo_patterns.get_mut(index);
-    }
-
     pub fn send_repository_list(&mut self, ip_list: Vec<String>, port: u32) {
-        let patterns: Vec<String> = self.filter_repo_patterns.clone();
         let repositories: Vec<Repository> = self.executor.repos().clone();
 
-        let create_list_func: Box<dyn FnMut() -> String> = Box::new(move || create_json_of_packet_list(patterns.clone(), repositories.clone()));
+        let create_list_func: Box<dyn FnMut() -> String> = Box::new(move || create_json_of_packet_list(repositories.clone()));
 
         self.send_list_json(ip_list, port, create_list_func);
     }
@@ -314,19 +283,28 @@ impl AppBaseLogic {
     }
 
     pub fn send_packages_list(&mut self, ip_list: Vec<String>, port: u32) {
-        let patterns: Vec<String> = self.filter_patterns.clone();
-        let packets: Vec<FoundPackage> = self.executor.packets_list().clone();
+        let packets: Vec<FoundPackage> = self.executor.packets_list().iter().filter(|c| self.packages_checker.borrow().check(c.get_name())).cloned().collect();
 
-        let create_list_func: Box<dyn FnMut() -> String> = Box::new(move || { create_json_of_packet_list(patterns.clone(), packets.clone()) });
+        let func: Box<dyn FnMut() -> String> = Box::new(move || { create_json_of_packet_list(packets.clone())});
 
-        self.send_list_json(ip_list, port, create_list_func);
+        self.send_list_json(ip_list, port, func);
     }
 
     pub fn recieve_packages_list(&mut self, port: u32) -> Option<Vec<FoundPackage>>
     {
+        info!("Recieving packages on port: {}", port);
         let parser_func= Box::new(|line| parse_json_of_package_list::<FoundPackage>(line) );
+        let mut recieved_packages: Option<Vec<FoundPackage>> = self.recieve_list_json(port, parser_func);
+        info!("Packages recieved!");
 
-        return self.recieve_list_json(port, parser_func);
+        debug!("Install flag set to NoInstalled");
+        if recieved_packages.is_some() {
+            for package in recieved_packages.as_mut().unwrap().iter_mut() {
+                package.install_flag = InstallFlag::NoInstalled;
+            }
+        }
+
+        return recieved_packages;
     }
 
     pub fn add_repo(&mut self, uri: String, alias: String) {

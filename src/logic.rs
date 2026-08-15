@@ -12,12 +12,10 @@ pub fn recieve_packages_and_repos(standard_logic: &mut AppBaseLogic, port: u32, 
     info!("Recieving on port {}. Is install repos: {}. Is install packages: {}", port, is_install_repos, is_install_packages);
     if let Some(repo_list) = repository_list{
         for repo in repo_list {
-            if repo.enabled_status {
-                info!("Repository: {}. Alias: {}", repo.uri, repo.alias);
+            info!("Repository: {}. Alias: {}", repo.uri, repo.alias);
 
-                if is_install_repos {
-                    standard_logic.add_repo(repo.uri, repo.alias);
-                }
+            if is_install_repos {
+                standard_logic.add_repo(repo.uri, repo.alias);
             }
         }
     }

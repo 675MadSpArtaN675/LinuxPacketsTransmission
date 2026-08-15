@@ -1,0 +1,14 @@
+#[macro_export]
+macro_rules! filter_patterns {
+    () => {
+        Vec::<&str>::from([
+            "^(plasma-.*|kde-.*|kf5-.*|kf6-.*|kwin.*|breeze.*|oxygen.*|sddm.*|kdeconnect.*|kio-.*|kinit.*|kded.*|kglobalaccel.*|khotkeys.*|kmix.*|gnome-.*|gdm.*|mutter.*|nautilus.*|gnome-shell.*|gnome-session.*|gnome-control-center.*|gnome-terminal.*|gedit.*|adwaita.*|gvfs.*|xfce4-.*|xfwm4.*|xfdesktop.*|thunar.*|xfce4-terminal.*|xfce4-notifyd.*|xfce4-power-manager.*|xfce4-screenshooter.*|lxde-.*|lxpanel.*|lxsession.*|openbox.*|pcmanfm.*|lxterminal.*|lxappearance.*|lxdm.*|lxqt-.*|lxqt-panel.*|pcmanfm-qt.*|lxqt-session.*|lxqt-config.*)$",
+            "^(intel-microcode|amd64-microcode|amd-microcode|iucode-tool|linux-firmware|ucode-(intel|amd)|linux|linux-lts|linux-zen|linux-hardened|kernel|kernel-default|kernel-devel|kernel-headers|kernel-modules|kernel-firmware|kernel-source|kernel-syms|linux-image|linux-headers|linux-modules|linux-modules-extra|linux-kbuild|linux-tools|linux-cloud-tools|linux-tools-common|xserver-xorg-video-.*|xorg-x11-drv-video-.*|xf86-video-.*|nvidia.*|fglrx.*|amdgpu-pro.*|libgl1-mesa-dri.*|mesa-vdpau-drivers.*|mesa-vulkan-drivers.*|vulkan-radeon.*|vulkan-intel.*|broadcom-sta|broadcom-wl|r8168|r8169|rtl[0-9]{4}.*|dkms.*|wireless-.*|iwlwifi.*|ath1[0-9]k.*|rtl8812au.*|rtl8821ce.*|tlp|powertop|acpid|acpi|acpi-support|laptop-mode-tools|upower|power-profiles-daemon|thermald|fancontrol|thinkfan|dell-.*|lenovo-.*|thinkpad-.*|asus-.*|msi-.*|system76-.*|framework-.*|samsung-.*|sony-.*|toshiba-.*|virtualbox-guest-.*|open-vm-tools.*|vmware-tools.*|hyperv-.*|spice-vdagent|qemu-guest-agent|language-pack-.*|locales|tzdata|keyboard-configuration|console-setup|kbd|keyutils|grub-.*|grub2.*|systemd-boot|efibootmgr|efivar|os-prober|refind|syslinux|extlinux|lm-sensors|sensors-applet|bluetooth|bluez|pulseaudio-module-.*|alsa-.*|pipewire-.*|sof-firmware|firmware-.*)$",
+            "^(apt.*|dpkg.*|aptitude|synaptic|python3?-apt|libapt-.*|dselect|gnome-apt|packagekit.*|packagekit-qt.*|packagekit-glib.*|dnf.*|yum.*|rpm.*|python3?-dnf|python3?-rpm|libdnf.*|librepo.*|libsolv.*|zypper.*|libzypp.*|yast2.*|pacman.*|libalpm.*|snapd.*|snap.*|flatpak.*|appstream.*|discover.*|plasma-discover.*|gnome-software.*|muon|apper|dnfdragora|yumex|software-properties.*|add-apt-repository|rpm-ostree|ostree|portage|emerge|paludis|xbps.*|apk-tools|apk|nix.*|guix|slackpkg|pkgtool|swaret)$",
+            "^(.*wayland.*|urw-.*|xf86-.*|xf86-video-.*|xserver-xorg-video-.*|xorg-x11-.*|xorg-x11-drv-video-.*|mesa.*|libgl.*|libegl.*|libgles.*|vulkan.*|nvidia.*|fglrx.*|amdgpu.*|radeon.*|intel-media.*|intel-gpu-tools.*|i965.*|iris.*|nouveau.*|vmware.*|virtualbox-guest.*|qxl.*|cirrus.*|fbdev.*|vesa.*|xdg-.*|xdg-desktop-portal.*|xdg-user-dirs.*|xdg-utils.*|xdg-dbus-proxy.*|xdg-desktop-portal-gtk.*|xdg-desktop-portal-wlr.*|xdg-desktop-portal-hyprland.*|.*x11.*|tpm.*)$"
+        ])
+    };
+}
+
+pub use crate::package_b_a_w_list::NameCheckuper;
+pub use filter_patterns;
